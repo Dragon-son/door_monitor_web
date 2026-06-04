@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大华门禁监控管理系统</title>
+<link href="static/css/access_control.css?v=20260512-person-save-toast" rel="stylesheet" type="text/css" media="all"/>
+<link href="static/css/preview.css" rel="stylesheet" type="text/css" media="all"/>
+</head>
+<body>
+<!-- 全屏加载动画（权限读取时显示） -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">加载中…</div>
+</div>
+<div id="login-page" class="login-container">
+  <div class="login-card">
+    <h2>🔐 门禁监控管理系统</h2>
+    <div id="login-form">
+      <div class="form-row"><input type="text" id="login-username" placeholder="用户名" onkeyup="if(event.key==='Enter') document.getElementById('login-password').focus()"></div>
+      <div class="form-row"><input type="password" id="login-password" placeholder="密码" onkeyup="if(event.key==='Enter') doLogin()"></div>
+      <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">登录</button>
+      <p style="margin-top:12px;color:var(--text3);">没有账号？<a href="#" onclick="showRegisterForm()">注册</a></p>
+    </div>
+    <div id="register-form" style="display:none;">
+      <div class="form-row"><input type="text" id="reg-username" placeholder="用户名" onkeyup="if(event.key==='Enter') document.getElementById('reg-password').focus()"></div>
+      <div class="form-row"><input type="password" id="reg-password" placeholder="密码" onkeyup="if(event.key==='Enter') document.getElementById('reg-password2').focus()"></div>
+      <div class="form-row"><input type="password" id="reg-password2" placeholder="确认密码" onkeyup="if(event.key==='Enter') doRegister()"></div>
+      <button class="btn btn-primary" id="registerBtn" onclick="doRegister()">注册</button>
+      <p style="margin-top:12px;color:var(--text3);"><a href="#" onclick="showLoginForm()">返回登录</a></p>
+    </div>
+    <div id="login-msg" style="color:var(--red2);margin-top:10px;font-size:13px;"></div>
+  </div>
+</div>
+
+<div id="main-app" style="display:none;">
+
+<div class="main main-noside">
+  <div class="topbar-new" id="topbarNew">
+    <div class="topbar-logo">
+      <span class="logo-icon">🔐</span>
+      <span class="logo-text">门禁监控管理系统</span>
+    </div>
+    <button class="topbar-home" title="主页" onclick="openTab('home')">🏠</button>
+    <div class="topbar-tabs" id="topbarTabs"></div>
+    <div class="topbar-right" style="border-left: none;">
+    	 <button type="button" class="btn btn-ghost btn-sm" onclick="showAppQr()">下载APP</button>
+    </div>
+    <div class="topbar-right">
+      <span class="status-dot" id="srvDot"></span>
+      <span id="srvLabel" style="font-size:12px;color:var(--text3);">连接中…</span>
+      <span style="font-size:12px;color:var(--text3);margin:0 6px;" id="userLabel"></span>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">登出</button>
+    </div>
+  </div>
+  <div class="topbar-actions" id="topbarActions"></div>
+  <!-- 兼容旧代码:隐藏的 breadcrumb 占位,door.js 等仍会写入但不显示 -->
+  <div id="breadcrumb" style="display:none"></div>
+  <!-- 批量操作 topbar -->
+  <div class="batch-topbar" id="batchTopbar" style="display:none">
+    <div class="batch-actions">
+      <button class="btn btn-ghost btn-sm" id="toggleAllAreasBtn" onclick="toggleAllAccessAreas()">全部折叠</button>
+      <button class="btn btn-mode btn-mode-close" onclick="batchSetDoorMode('AlwaysClose')">🔒 一键常闭</button>
+      <button class="btn btn-mode btn-mode-open" onclick="batchSetDoorMode('AlwaysOpen')">🔓 一键常开</button>
+      <button class="btn btn-mode btn-mode-normal" onclick="batchSetDoorMode('Normal')">↩ 恢复正常</button>
+    </div>
+    <div class="batch-right">
+      <span class="batch-info" id="batchCount">已选择 0 个设备</span>
+      <button class="btn btn-ghost btn-sm" onclick="clearSelection()">取消选择</button>
+    </div>
+  </div>
+  <div class="content">
+
+    <!-- 主页 -->
+    <div class="page active" id="page-home">
+      <div class="home-wrap">
+        <div class="home-hero">
+          <div class="home-hero-title">门禁监控管理系统</div>
+          <div class="home-hero-sub">选择一个功能模块进入</div>
+        </div>
+        <div class="home-grid" id="homeGrid"></div>
+      </div>
+    </div>
+
+    <!-- 门禁控制页面 -->
+    <div class="page" id="page-access">
+      <div class="conn-banner" id="banner-access">⚠️ 无法连接后端服务，请联系管理员</div>
+      <div id="access-list">
+        <div id="access-areas-container"></div>
+      </div>
+      <div id="access-detail" class="device-detail">
+        <button class="back-btn" onclick="showAccessList()">← 返回设备列表</button>
+        <div class="open-door-card">
+          <div id="doorStatusIcon" style="font-size:28px;margin-bottom:4px">🔒</div>
+          <div id="doorStatusText" style="font-size:14px;font-weight:600;margin-bottom:8px;color:var(--accent)">门已关</div>
+          <h3 id="detail-name">设备名称</h3>
+          <p id="detail-ip" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3);margin-bottom:4px"></p>
+          <!-- ★ 预览按钮 + 开门按钮并排 -->
+          <div style="display:flex;gap:12px;justify-content:center;margin-top:8px;flex-wrap:wrap;">
+            <button class="btn btn-preview" id="previewBtn" onclick="openPreview(currentDev)">📹 &nbsp; 实时预览</button>
+            <button class="btn btn-open" id="openDoorBtn" onclick="doOpenDoor()">🔓 &nbsp; 远程开门</button>
+          </div>
+          <!-- 门模式按钮 -->
+          <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+            <button class="btn btn-mode btn-mode-normal" id="btn-mode-normal" onclick="setDoorMode('Normal')">正常</button>
+            <button class="btn btn-mode btn-mode-open" id="btn-mode-open" onclick="setDoorMode('AlwaysOpen')">常开</button>
+            <button class="btn btn-mode btn-mode-close" id="btn-mode-close" onclick="setDoorMode('AlwaysClose')">常闭</button>
+          </div>
+        </div>
+        <div class="card access-log-permission">
+          <div class="sec-hd" style="margin-bottom:14px">
+    			<div class="card-title" style="margin-bottom:0">开门记录</div>
+    			<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      		  <div class="search-bar"><span class="search-icon">🔍</span><input type="text" placeholder="搜索人员…" id="logSearch" oninput="filterLog()"></div>
+       			 <input type="date" id="logEnd" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--radius);font-size:13px;width:140px;">
+       			 <button class="btn btn-ghost btn-sm" onclick="fetchLog()">↻ 查询</button>
+    			</div>
+			  </div>
+          <div class="table-wrap">
+            <table><thead><tr><th>时间</th><th>用户ID</th><th>姓名</th><th>方式</th><th>状态</th><th>预览</th></tr></thead><tbody id="logBody"></tbody></table>
+          </div>
+        </div>
+      </div>
+      <!-- 全局开门记录 -->
+      <div class="card" id="global-log-card" style="margin-top:16px;">
+        <div class="sec-hd" style="margin-bottom:14px">
+          <div class="card-title" style="margin-bottom:0">全部开门记录</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div class="search-bar"><span class="search-icon">🔍</span><input type="text" placeholder="搜索人员…" id="globalLogSearch" oninput="filterGlobalLog()"></div>
+            <input type="date" id="globalLogEnd" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--radius);font-size:13px;width:140px;">
+            <button class="btn btn-ghost btn-sm" onclick="fetchGlobalLog()">↻ 查询</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr><th>时间</th><th>门名称</th><th>用户ID</th><th>姓名</th><th>方式</th><th>状态</th><th>预览</th></tr></thead><tbody id="globalLogBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 视频监控页面 -->
+    <div class="page" id="page-monitor">
+      <div class="conn-banner" id="banner-monitor">⚠️ 无法连接后端服务，请联系管理员</div>
+      <div class="vp-layout">
+        <div class="vp-sidebar">
+          <div class="vp-sidebar-toolbar">
+            <div class="search-bar" style="flex:1"><span class="search-icon">🔍</span><input type="text" placeholder="搜索通道…" id="monitorSearchInput" oninput="filterMonitorChannels(this.value)"></div>
+            <button class="btn btn-ghost btn-sm" onclick="loadMonitorDevices()" title="刷新">↻</button>
+          </div>
+          <div id="monitor-sidebar" class="vp-sidebar-tree"></div>
+        </div>
+        <div class="vp-main">
+          <div class="vp-canvas-wrap">
+            <canvas id="monitor-canvas"></canvas>
+            <div class="vp-status" id="monitor-status">请从左侧选择通道</div>
+            <button class="btn btn-primary btn-sm" id="monitor-retry-btn" onclick="retryMonitorStream()" style="display:none;position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);z-index:2;">重试</button>
+            <button class="vp-close-btn" onclick="stopMonitorStream()" title="关闭视频流" aria-label="关闭视频流">✕</button>
+            <button class="vp-fullscreen-btn" onclick="toggleCanvasFullscreen(this.parentElement)" title="全屏">⛶</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 视频回放页面 -->
+    <div class="page" id="page-playback">
+      <div class="conn-banner" id="banner-playback">⚠️ 无法连接后端服务,请联系管理员</div>
+      <div class="vp-layout">
+        <div class="vp-sidebar">
+          <div class="vp-sidebar-toolbar">
+            <div class="search-bar" style="flex:1"><span class="search-icon">🔍</span><input type="text" placeholder="搜索通道…" id="playbackSearchInput" oninput="filterPlaybackChannels(this.value)"></div>
+            <button class="btn btn-ghost btn-sm" onclick="loadPlaybackDevices()" title="刷新">↻</button>
+          </div>
+          <div id="playback-channels" class="vp-sidebar-tree">
+            <div class="empty-state" style="padding:20px"><div class="spinner"></div><p>加载中…</p></div>
+          </div>
+          <div class="vp-sidebar-bottom">
+            <div>
+              <label>日期</label>
+              <input type="date" id="playback-date">
+            </div>
+            <div>
+              <label>码流</label>
+              <select id="playback-stream">
+                <option value="main">主码流</option>
+                <option value="sub">辅码流</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="loadPlaybackRecords()" id="playback-query-btn" disabled>查询录像</button>
+          </div>
+        </div>
+        <div class="vp-main">
+          <div class="vp-canvas-wrap">
+            <canvas id="playback-canvas"></canvas>
+            <div class="vp-status" id="playback-status">请从左侧选择通道</div>
+            <button class="vp-fullscreen-btn" onclick="toggleCanvasFullscreen(this.parentElement)" title="全屏">⛶</button>
+          </div>
+          <div class="playback-controls">
+            <button class="btn btn-primary" id="playback-play-btn" onclick="playbackPlayOrPause()" disabled>▶ 播放</button>
+            <button class="btn btn-ghost"   id="playback-stop-btn" onclick="playbackStop()" disabled>⏹ 停止</button>
+          </div>
+          <div class="playback-timeline" id="playback-timeline">
+            <div class="timeline-empty" id="timeline-empty">请选择通道和日期后查询录像</div>
+            <canvas id="playback-timeline-canvas" style="display:none"></canvas>
+            <div class="timeline-tooltip" id="timeline-tooltip"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设备管理页面 -->
+    <div class="page" id="page-devices">
+      <div class="conn-banner" id="banner-devices">⚠️ 无法连接后端服务，请联系管理员</div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-num" id="stat-total">—</div><div class="stat-label">设备总数</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:var(--accent)" id="stat-online">—</div><div class="stat-label">在线设备</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:var(--red2)" id="stat-offline">—</div><div class="stat-label">离线设备</div></div>
+      </div>
+      <div class="sec-hd">
+        <h2>设备列表</h2>
+        <div class="sec-actions">
+          <div class="search-bar"><span class="search-icon">🔍</span><input type="text" placeholder="搜索设备…" id="devSearchInput" oninput="filterDevices(this.value)"></div>
+          <button class="btn btn-primary admin-only" id="btn-add-device" onclick="openDeviceModal()">+ 添加设备</button>
+          <button class="btn btn-ghost admin-only" id="btn-manage-area" onclick="openAreaModal()">🗂️ 区域管理</button>
+          <button class="btn btn-ghost" onclick="refreshDevices()">↻ 刷新</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="table-wrap">
+          <table><thead><tr><th>名称</th><th>类型</th><th>IP 地址</th><th>端口</th><th>账号</th><th>区域</th><th>状态</th><th>操作</th></tr></thead><tbody id="devBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 人员管理页面 -->
+    <div class="page" id="page-persons">
+      <div class="conn-banner" id="banner-persons">⚠️ 无法连接后端服务，请联系管理员</div>
+      <div class="device-picker">
+        <label>选择设备：</label>
+        <select class="form-select" id="personDevSel" onchange="onPersonDeviceChange()" style="max-width:280px;width:auto"><option value="">-- 请选择设备 --</option></select>
+        <span id="personDevBadge" style="margin-left:4px"></span>
+      </div>
+      <div id="personContent" style="display:none">
+        <div class="sec-hd">
+          <h2>人员列表</h2>
+          <div class="sec-actions" style="flex-wrap:wrap;gap:8px;">
+            <div class="search-bar" style="max-width:160px;"><span class="search-icon">🆔</span><input type="text" placeholder="用户ID" id="searchUserId" onkeyup="if(event.key==='Enter') searchById(event)"></div>
+            <div class="search-bar" style="max-width:160px;"><span class="search-icon">👤</span><input type="text" placeholder="姓名" id="searchUserName" onkeyup="if(event.key==='Enter') searchByName(event)"></div>
+            <button class="btn btn-blue btn-sm" onclick="searchById(event)">🔍 查ID</button>
+            <button class="btn btn-blue btn-sm" onclick="searchByName(event)">🔍 查姓名</button>
+            <button class="btn btn-blue btn-sm" onclick="showAllLocalPersons()">📋 返回</button>
+            <button class="btn btn-primary" onclick="loadAllDeviceUsers(event)">📥 同步设备人员</button>
+            <button class="btn btn-primary" onclick="openPersonModal()">+ 添加人员</button>
+            <button class="btn btn-primary" onclick="downloadTemplate()">📥 下载模板</button>
+            <button class="btn btn-primary" onclick="document.getElementById('batchFolderInput').click()">📂 批量导入</button>
+            <input type="file" id="batchFolderInput" webkitdirectory style="display:none" onchange="handleBatchFolder(this.files)">
+          </div>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table style="min-width: 650px;">
+              <thead><tr>
+                <th><button type="button" class="table-sort-btn" data-person-sort="user_id" onclick="setPersonSort('user_id')">用户ID <span class="sort-icon">↕</span></button></th>
+                <th>姓名</th>
+                <th><button type="button" class="table-sort-btn" data-person-sort="valid_end" onclick="setPersonSort('valid_end')">有效期 <span class="sort-icon">↕</span></button></th>
+                <th>状态</th>
+                <th class="person-face-col">人脸</th>
+                <th>操作</th>
+              </tr></thead>
+              <tbody id="personBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:16px;">
+          <span style="color:var(--text3);font-size:13px;">共 <span id="personTotal">0</span> 条</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-ghost btn-sm" id="personPrevBtn" onclick="prevPersonPage()" disabled>上一页</button>
+            <span style="padding:4px 8px;color:var(--text2);font-size:13px;"><span id="personCurrentPage">1</span>/<span id="personTotalPages">1</span></span>
+            <button class="btn btn-ghost btn-sm" id="personNextBtn" onclick="nextPersonPage()" disabled>下一页</button>
+            <input type="number" id="personJumpPage" min="1" style="width:60px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);font-size:12px;" placeholder="页">
+            <button class="btn btn-ghost btn-sm" onclick="jumpPersonPage()">跳转</button>
+          </div>
+        </div>
+      </div>
+      <div id="personPH" class="empty-state"><div class="empty-icon">👆</div><p>请先选择设备查看人员</p></div>
+    </div>
+    <!-- 用户管理页面（仅管理员） -->
+    <div class="page" id="page-admin">
+      <div class="sec-hd">
+        <h2>用户管理</h2>
+        <div class="sec-actions">
+          <button class="btn btn-primary" id="adminCreateUserBtn" onclick="openAdminUserModal()">+ 新建用户</button>
+          <button class="btn btn-ghost" onclick="loadAdminUsers()">↻ 刷新</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="table-wrap">
+          <table><thead><tr><th>用户名</th><th>部门</th><th>姓名</th><th>角色</th><th>可管理部门</th><th>权限</th><th>已分配设备</th><th>操作</th></tr></thead><tbody id="adminUserBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+    <!-- 操作日志页面（仅管理员） -->
+    <div class="page" id="page-audit">
+      <div class="sec-hd">
+        <h2>📋 操作日志</h2>
+        <div class="sec-actions" style="flex-wrap:wrap;gap:8px;">
+          <select class="form-select" id="auditActionFilter" onchange="loadAuditLogs(1)" style="max-width:160px;width:auto">
+            <option value="">全部操作</option>
+            <option value="open_door">🚪 开门</option>
+            <option value="door_mode">🚪 门模式</option>
+            <option value="login">🔑 登录</option>
+            <option value="logout">🔑 登出</option>
+            <option value="register">👤 注册</option>
+            <option value="import_persons">📥 同步人员</option>
+            <option value="delete_person">🗑️ 删除人员</option>
+            <option value="update_person">✏️ 更新人员</option>
+            <option value="remove_person_device">🔗 移除人员设备</option>
+            <option value="add_face">📸 上传人脸</option>
+            <option value="batch_import">📦 批量导入</option>
+            <option value="add_device">📟 添加设备</option>
+            <option value="update_device">📟 修改设备</option>
+            <option value="delete_device">📟 删除设备</option>
+            <option value="add_area">🏠 添加区域</option>
+            <option value="delete_area">🏠 删除区域</option>
+            <option value="admin_create_user">👤 创建用户</option>
+            <option value="admin_update_user">👤 修改用户</option>
+            <option value="admin_update_user_permissions">🔐 修改用户权限</option>
+            <option value="admin_delete_user">👤 删除用户</option>
+            <option value="admin_assign_devices">📟 分配设备</option>
+            <option value="admin_remove_user_device">📟 移除设备</option>
+            <option value="device_add_user">🛠️ 设备添加人员</option>
+            <option value="device_update_user">🛠️ 设备修改人员</option>
+            <option value="device_delete_user">🛠️ 设备删除人员</option>
+            <option value="device_freeze_user">❄️ 冻结人员</option>
+            <option value="device_unfreeze_user">🔥 解冻人员</option>
+            <option value="device_update_validity">📅 更新有效期</option>
+          </select>
+          <input type="text" class="form-input" id="auditUsernameFilter" placeholder="操作人" style="width:100px;" onkeyup="if(event.key==='Enter') loadAuditLogs(1)">
+          <input type="date" id="auditStartDate" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--radius);font-size:13px;width:140px;">
+          <span style="color:var(--text3);font-size:13px;">—</span>
+          <input type="date" id="auditEndDate" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:var(--radius);font-size:13px;width:140px;">
+          <button class="btn btn-primary btn-sm" onclick="loadAuditLogs(1)">🔍 查询</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearAuditFilters()">🗑️ 清空</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadAuditLogs(1)">↻ 刷新</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <div class="table-wrap">
+          <table style="min-width: 800px;">
+            <thead><tr>
+              <th style="width:50px;">#</th>
+              <th style="width:160px;">时间</th>
+              <th style="width:100px;">操作人</th>
+              <th style="width:120px;">IP</th>
+              <th style="width:150px;">操作</th>
+              <th>目标</th>
+              <th style="width:60px;">结果</th>
+              <th>详情</th>
+            </tr></thead>
+            <tbody id="auditLogBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:16px;">
+        <span style="color:var(--text3);font-size:13px;">共 <span id="auditTotal">0</span> 条</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" id="auditPrevBtn" onclick="auditChangePage(-1)" disabled>上一页</button>
+          <span style="padding:4px 8px;color:var(--text2);font-size:13px;"><span id="auditCurrentPage">1</span>/<span id="auditTotalPages">1</span></span>
+          <button class="btn btn-ghost btn-sm" id="auditNextBtn" onclick="auditChangePage(1)" disabled>下一页</button>
+          <input type="number" id="auditJumpPage" min="1" style="width:60px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);font-size:12px;" placeholder="页">
+          <button class="btn btn-ghost btn-sm" onclick="auditJumpToPage()">跳转</button>
+        </div>
+      </div>
+    </div>
+<!-- 设备模态框 -->
+<div class="modal-overlay" id="devModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="devModalTitle">添加设备</div><button class="modal-close" onclick="closeModal('devModal')">✕</button></div>
+    <div class="modal-body"><div class="modal-body-scroll"><div class="form-grid">
+      <div class="form-row"><label class="form-label">设备名称 *</label><input class="form-input" id="d-name" placeholder=""></div>
+      <div class="form-row"><label class="form-label">设备类型 *</label><select class="form-select" id="d-type" onchange="updateDeviceTypeFields()"><option value="access">门禁</option><option value="nvr">录像机</option></select></div>
+      <div class="form-row"><label class="form-label">IP 地址 *</label><input class="form-input" id="d-ip" placeholder=""></div>
+      <div class="form-row"><label class="form-label">端口 *</label><input class="form-input" id="d-port" type="number" placeholder="37777"></div>
+      <div class="form-row" id="d-area-row"><label class="form-label">区域</label><select class="form-select" id="d-area"></select></div>
+      <div class="form-row"><label class="form-label">账号 *</label><input class="form-input" id="d-user" placeholder=""></div>
+      <div class="form-row"><label class="form-label">密码 *</label><input class="form-input" id="d-pass" type="password" placeholder=""></div>
+      <div class="form-row"><label class="form-label">备注</label><input class="form-input" id="d-note" placeholder="可选"></div>
+    </div></div></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('devModal')">取消</button><button class="btn btn-primary" id="dev-save-btn" onclick="saveDevice()">保存设备</button></div>
+  </div>
+</div>
+
+<!-- 区域管理模态框 -->
+<div class="modal-overlay" id="areaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">区域管理</div>
+      <button class="modal-close" onclick="closeModal('areaModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+        <input type="text" id="newAreaName" class="form-input" placeholder="新区域名称" style="flex:1">
+        <button class="btn btn-primary" onclick="addArea()">添加</button>
+      </div>
+      <div class="table-wrap" style="max-height: 55vh; overflow-y: auto;">
+        <table style="width:100%">
+          <thead><tr><th>区域名称</th><th>操作</th></tr></thead>
+          <tbody id="areaListBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('areaModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 同步设备人员模态框 -->
+<div class="modal-overlay" id="syncDeviceModal">
+  <div class="modal" style="width: 540px;">
+    <div class="modal-header">
+      <div class="modal-title">同步设备人员</div>
+      <button class="modal-close" onclick="closeModal('syncDeviceModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size: 12.5px; color: var(--text3); margin-bottom: 16px;">
+        从选中的设备同步人员列表到本地数据库，将覆盖本地已存在的人员信息。
+      </p>
+      <!-- 搜索框 -->
+      <div class="search-bar" style="margin-bottom: 12px;">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="syncDeviceSearchInput" placeholder="搜索设备名称或 IP..." oninput="filterSyncDeviceList()">
+      </div>
+      <!-- 全选工具栏 -->
+      <div class="sync-device-toolbar">
+        <label class="sync-device-select-all">
+          <input type="checkbox" id="syncDeviceSelectAll" onchange="setSyncDeviceAll(this.checked)">
+          <span>全选当前结果</span>
+        </label>
+        <span id="syncDeviceSelectHint" class="sync-device-hint"></span>
+      </div>
+      <!-- 设备列表容器 -->
+      <div id="sync-device-list" class="sync-device-list"></div>
+      <div id="syncDeviceStatusHint" style="margin-top: 8px; font-size: 12px; color: var(--text3);"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('syncDeviceModal')">取消</button>
+      <button class="btn btn-primary" id="syncDeviceBtn" onclick="submitDeviceSyncSelection()">开始同步</button>
+    </div>
+  </div>
+</div>
+
+<!-- 人员模态框（多选设备） -->
+<div class="modal-overlay" id="personModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="personModalTitle">添加人员</div><button class="modal-close" onclick="closeModal('personModal')">✕</button></div>
+    <div class="modal-body"><div class="modal-body-scroll"><div class="form-grid">
+      <div class="form-row"><label class="form-label">用户ID *</label><input class="form-input" id="p-id" placeholder="工号"></div>
+      <div class="form-row"><label class="form-label">姓名</label><input class="form-input" id="p-name" placeholder=""></div>
+      <div class="form-row" style="grid-column: span 2;" id="face-upload-row">
+        <label class="form-label">人脸照片</label>
+        <input class="form-input" id="p-face" type="file" accept="image/*" style="padding:6px 10px">
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;">支持 jpg/png，建议 ≤ 100KB，保存后自动下发到设备</div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;">
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text3);">最大KB<input class="form-input" id="p-face-kb" type="number" min="0" value="100" placeholder="0不限"></label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text3);">宽度<input class="form-input" id="p-face-w" type="number" min="0" value="0" placeholder="0不缩放"></label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text3);">高度<input class="form-input" id="p-face-h" type="number" min="0" value="0" placeholder="0不缩放"></label>
+          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text3);">质量<input class="form-input" id="p-face-q" type="number" min="0" max="100" value="0" placeholder="0自动"></label>
+        </div>
+      </div>
+      <div class="form-row" style="grid-column: span 2; display:none;" id="face-hint-row">
+        <div style="padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);font-size:13px;color:#e6a817;">
+          ⚠️ 本地没有当前人员照片，如果新增所属设备，请点击保存人员后上传照片
+        </div>
+      </div>
+      <div class="form-row" style="grid-column: span 2; display:none;" id="face-update-row">
+        <label class="form-label">更新人脸照片</label>
+        <input class="form-input" id="p-face-update" type="file" accept="image/*" style="padding:6px 10px">
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;">选择新照片后，点击"更新人脸"按钮会覆盖所有已有设备的人脸照片</div>
+        <button class="btn btn-primary" id="updateFaceBtn" onclick="updatePersonFace()" style="margin-top:8px;">更新人脸到所有设备</button>
+      </div>
+      <div class="form-row" style="grid-column: span 2;">
+        <label class="form-label">所属设备 * (可多选)</label>
+        <div class="person-device-toolbar">
+          <label class="person-device-select-all">
+            <input type="checkbox" id="personDeviceSelectAll" onchange="setPersonDeviceAll(this.checked)">
+            <span>全选当前结果</span>
+          </label>
+          <span id="personDeviceSelectHint"></span>
+        </div>
+        <input type="text" id="device-search-input" class="form-input" placeholder="🔍 搜索设备名称或IP..." style="margin-bottom:8px;">
+        <div id="device-checkbox-list" style="max-height:180px;overflow-y:auto;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:10px;"></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;">勾选设备即可添加人员</div>
+      </div>
+      <div class="form-row" style="grid-column: span 2;">
+        <label class="form-label">有效期截止</label>
+        <input class="form-input" id="p-end" type="date" value="2037-12-31">
+      </div>
+    </div></div></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('personModal')">取消</button><button class="btn btn-primary" id="personSaveBtn" onclick="savePerson()">保存人员</button></div>
+  </div>
+</div>
+
+<!-- 有效期模态框 -->
+<div class="modal-overlay" id="validityModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">修改有效期</div><button class="modal-close" onclick="closeModal('validityModal')">✕</button></div>
+    <p style="font-size:13px;color:var(--text3);margin-bottom:16px">用户ID：<strong id="validityUid" style="color:var(--text)"></strong></p>
+    <div class="form-grid">
+      <div class="form-row"><label class="form-label">开始日期</label><input class="form-input" id="validity-begin" type="date" value="2000-01-01"></div>
+      <div class="form-row"><label class="form-label">截止日期</label><input class="form-input" id="validity-end" type="date" value="2037-12-31"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('validityModal')">取消</button><button class="btn btn-primary" id="validitySaveBtn" onclick="submitValidityUpdate()">保存有效期</button></div>
+  </div>
+</div>
+
+<!-- 人脸模态框 -->
+<div class="modal-overlay" id="faceModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">录入人脸</div><button class="modal-close" onclick="closeModal('faceModal')">✕</button></div>
+    <p style="font-size:13px;color:var(--text3);margin-bottom:16px">用户ID：<strong id="faceUid" style="color:var(--text)"></strong></p>
+    <div class="form-row"><label class="form-label">选择图片 *</label><input class="form-input" id="faceFile" type="file" accept="image/*" style="padding:6px 10px"></div>
+    <div class="form-grid">
+      <div class="form-row"><label class="form-label">缩放宽度（0=不缩放）</label><input class="form-input" id="face-w" type="number" value="0"></div>
+      <div class="form-row"><label class="form-label">缩放高度（0=不缩放）</label><input class="form-input" id="face-h" type="number" value="0"></div>
+      <div class="form-row"><label class="form-label">JPEG 质量（0=原图）</label><input class="form-input" id="face-q" type="number" value="0"></div>
+      <div class="form-row"><label class="form-label">最大100KB（0=不限）</label><input class="form-input" id="face-kb" type="number" value="0"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('faceModal')">取消</button><button class="btn btn-primary" id="faceBtn" onclick="submitFace()">下发人脸</button></div>
+  </div>
+</div>
+
+<!-- 人脸照片预览模态框 -->
+<div class="modal-overlay" id="facePreviewModal" data-close-on-backdrop="true" data-close-on-esc="true" data-close-function="closeFacePreview">
+  <div class="modal" style="max-width:420px;text-align:center">
+    <div class="modal-header">
+      <div class="modal-title face-preview-label">人脸照片</div>
+      <button class="modal-close" onclick="closeFacePreview()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px;display:flex;justify-content:center">
+      <img class="face-preview-img" src="" style="max-width:100%;max-height:60vh;border-radius:8px;object-fit:contain">
+    </div>
+  </div>
+</div>
+
+<!-- 通行抓拍预览模态框 -->
+<div class="modal-overlay" id="accessSnapshotModal" data-close-on-backdrop="true" data-close-on-esc="true" data-close-function="closeAccessSnapshot">
+  <div class="modal access-snapshot-modal">
+    <div class="modal-header">
+      <div class="modal-title" id="accessSnapshotTitle">通行抓拍</div>
+      <button class="modal-close" onclick="closeAccessSnapshot()">✕</button>
+    </div>
+    <div class="modal-body access-snapshot-body">
+      <div id="accessSnapshotStatus" class="access-snapshot-status">加载中…</div>
+      <img id="accessSnapshotImg" class="access-snapshot-img" alt="通行抓拍图片" style="display:none">
+    </div>
+  </div>
+</div>
+
+<!-- 管理员：新建/编辑用户模态框 -->
+<div class="modal-overlay" id="adminUserModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="adminUserModalTitle">新建用户</div>
+      <button class="modal-close" onclick="closeModal('adminUserModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <label class="form-label">用户名 *</label>
+          <input class="form-input" id="au-username" placeholder="登录用户名">
+        </div>
+        <div class="form-row">
+          <label class="form-label">角色</label>
+          <select class="form-select" id="au-role">
+            <option value="user">普通用户</option>
+            <option value="admin">管理员</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">部门</label>
+          <input class="form-input" id="au-department" placeholder="可选">
+        </div>
+        <div class="form-row">
+          <label class="form-label">姓名</label>
+          <input class="form-input" id="au-name" placeholder="可选">
+        </div>
+        <div class="form-row" id="au-department-scopes-row" style="grid-column:span 2;display:none">
+          <label class="form-label">可管理部门</label>
+          <input class="form-input" id="au-department-scopes" placeholder="多个部门用逗号分隔，如：技术部, 财务部">
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;">仅超级管理员可配置；默认包含管理员所属部门。</div>
+        </div>
+        <div class="form-row" style="grid-column:span 2">
+          <label class="form-label">密码 *<span id="au-pass-hint" style="color:var(--text3);font-weight:400;margin-left:4px"></span></label>
+          <input class="form-input" id="au-password" type="password" placeholder="登录密码">
+        </div>
+        <div class="form-row" style="grid-column:span 2">
+          <label class="form-label">页面权限</label>
+          <div class="permission-grid" id="au-page-permissions">
+            <label><input type="checkbox" value="page.access"> 门禁控制</label>
+            <label><input type="checkbox" value="page.persons"> 人员管理</label>
+            <label><input type="checkbox" value="page.monitor"> 视频监控</label>
+            <label><input type="checkbox" value="page.playback"> 视频回放</label>
+            <label><input type="checkbox" value="page.devices"> 设备管理</label>
+            <label><input type="checkbox" value="page.admin"> 用户管理</label>
+            <label><input type="checkbox" value="page.audit"> 操作日志</label>
+          </div>
+        </div>
+        <div class="form-row" style="grid-column:span 2">
+          <label class="form-label">门禁细化权限</label>
+          <div class="permission-grid" id="au-access-permissions">
+            <label><input type="checkbox" value="access.preview"> 实时预览</label>
+            <label><input type="checkbox" value="access.open_door"> 远程开门</label>
+            <label><input type="checkbox" value="access.set_door_mode"> 门模式设置</label>
+            <label><input type="checkbox" value="access.view_logs"> 开门记录查看</label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('adminUserModal')">取消</button>
+      <button class="btn btn-primary" id="adminUserSaveBtn" onclick="saveAdminUser()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 管理员：分配设备模态框 -->
+<div class="modal-overlay" id="assignDevModal">
+  <div class="modal" style="width:480px">
+    <div class="modal-header"><div class="modal-title">分配设备给 <span id="assignTargetUser" style="color:var(--accent2)"></span></div><button class="modal-close" onclick="closeModal('assignDevModal')">✕</button></div>
+    <div class="modal-body"><div class="modal-body-scroll">
+    <p style="font-size:12.5px;color:var(--text3);margin-bottom:14px">勾选设备后点击保存，用户即可在其账号中看到这些设备并使用门禁功能。</p>
+    <div class="search-bar" style="margin-bottom:12px">
+      <span class="search-icon">🔍</span><input type="text" id="assignDevSearch" placeholder="搜索设备名称或 IP..." oninput="filterAssignDevList()">
+    </div>
+    <div id="assignDevList"></div>
+    </div></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('assignDevModal')">取消</button><button class="btn btn-primary" id="assignDevSaveBtn" onclick="saveAssignDevices()">保存分配</button></div>
+  </div>
+</div>
+
+<!-- 删除人员设备选择模态框 -->
+<div class="modal-overlay" id="deleteDeviceModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-header"><div class="modal-title">删除人员</div><button class="modal-close" onclick="closeModal('deleteDeviceModal')">✕</button></div>
+    <div class="modal-body"><div class="modal-body-scroll">
+      <p class="confirm-text" id="deleteDevicePrompt" style="margin-bottom:14px"></p>
+      <div class="person-device-toolbar">
+        <label class="person-device-select-all">
+          <input type="checkbox" id="deleteDeviceSelectAll" onchange="setDeleteDeviceAll(this.checked)">
+          <span>全选当前结果</span>
+        </label>
+        <span id="deleteDeviceSelectHint"></span>
+      </div>
+      <input type="text" id="delete-device-search" class="form-input" placeholder="🔍 搜索设备名称或IP..." style="margin-bottom:8px;">
+      <div id="delete-device-list" class="person-device-list"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('deleteDeviceModal')">取消</button>
+      <button class="btn btn-danger" id="deleteDeviceOkBtn" onclick="submitDeleteDeviceSelection()">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- 冻结/解冻人员设备选择模态框 -->
+<div class="modal-overlay" id="freezeDeviceModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-header"><div class="modal-title" id="freezeDeviceModalTitle">选择目标设备</div><button class="modal-close" onclick="closeModal('freezeDeviceModal')">✕</button></div>
+    <div class="modal-body"><div class="modal-body-scroll">
+      <p class="confirm-text" id="freezeDevicePrompt" style="margin-bottom:14px"></p>
+      <div class="person-device-toolbar">
+        <label class="person-device-select-all">
+          <input type="checkbox" id="freezeDeviceSelectAll" onchange="setFreezeDeviceAll(this.checked)">
+          <span>全选当前结果</span>
+        </label>
+        <span id="freezeDeviceSelectHint"></span>
+      </div>
+      <input type="text" id="freeze-device-search" class="form-input" placeholder="🔍 搜索设备名称或IP..." style="margin-bottom:8px;">
+      <div id="freeze-device-list" class="person-device-list"></div>
+    </div></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('freezeDeviceModal')">取消</button>
+      <button class="btn btn-danger" id="freezeDeviceOkBtn" onclick="submitFreezeDeviceSelection()">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 确认模态框 -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="width:360px">
+    <div class="modal-header"><div class="modal-title" id="confirmTitle">确认操作</div><button class="modal-close" onclick="closeModal('confirmModal')">✕</button></div>
+    <p class="confirm-text" id="confirmText"></p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="confirmCancel" onclick="closeModal('confirmModal')">取消</button>
+      <button class="btn btn-danger" id="confirmOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- ★ 视频预览模态框 -->
+<div class="modal-overlay" id="previewModal" data-close-on-backdrop="true" data-close-on-esc="true" data-close-function="closePreview">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="previewModalTitle">📹 实时预览</div>
+      <button class="modal-close" onclick="closePreview()">✕</button>
+    </div>
+    <!-- 视频画布区域 -->
+    <div class="preview-wrap">
+      <canvas id="previewCanvas"></canvas>
+      <div class="preview-overlay">
+        <div class="preview-topbar">
+          <span>
+            <span class="preview-status-dot"></span>
+            <span id="previewStatus">连接中…</span>
+          </span>
+          <div class="preview-stream-switch" id="previewStreamSwitch" style="display:none">
+            <button type="button" class="preview-stream-btn active" data-stream="main" onclick="setMonitorPreviewStream('main')">主码流</button>
+            <button type="button" class="preview-stream-btn" data-stream="sub" onclick="setMonitorPreviewStream('sub')">辅码流</button>
+          </div>
+        </div>
+        <div class="preview-bottombar">
+          <button class="preview-btn" id="audioToggleBtn" onclick="toggleAudio()">🔇 音频</button>
+          <button class="preview-btn" onclick="togglePreviewFullscreen()">⛶ 全屏</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="margin-top:14px;">
+      <button class="btn btn-open" id="previewOpenDoorBtn" style="display:none" onclick="doOpenDoorFromPreview()">🔓 &nbsp; 远程开门</button>
+      <button class="btn btn-ghost" onclick="closePreview()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP 下载二维码模态框 -->
+<div class="modal-overlay" id="appQrModal" data-close-on-backdrop="true" data-close-on-esc="true">
+  <div class="modal" style="width:360px;max-width:92vw;">
+    <div class="modal-header">
+      <div class="modal-title">下载APP</div>
+      <button class="modal-close" onclick="closeModal('appQrModal')">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 0 4px;">
+      <img src="static/app/app-download-qr.png" alt="APP下载二维码" style="width:240px;height:240px;max-width:100%;object-fit:contain;background:#fff;border-radius:12px;padding:8px;">
+      <div style="font-size:13px;color:var(--text3);text-align:center;line-height:1.6;">请使用手机扫码下载APP</div>
+    </div>
+    <div class="modal-footer" style="margin-top:14px;">
+      <button class="btn btn-ghost" onclick="closeModal('appQrModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="tc"></div>
+</div>
+
+<!-- JSMpeg：WebSocket MPEG1 播放器（HTTP/老浏览器降级用） -->
+<script src="static/js/jsmpg.js"></script>
+<!-- WebCodecs H.264/H.265 播放器(Secure Context + Chrome/Edge 107+ 优先使用) -->
+<script src="static/js/video-player.js"></script>
+<script src="static/js/globals.js" type="text/javascript"></script>
+<script src="static/js/shared.js" type="text/javascript"></script>
+<script src="static/js/tabs.js" type="text/javascript"></script>
+<script src="static/js/home.js" type="text/javascript"></script>
+<script src="static/js/device-mgmt.js" type="text/javascript"></script>
+<script src="static/js/door.js" type="text/javascript"></script>
+<script src="static/js/monitor.js" type="text/javascript"></script>
+<script src="static/js/person-mgmt.js?v=20260515-face-preview-modal" type="text/javascript"></script>
+<script src="static/js/admin.js" type="text/javascript"></script>
+<script src="static/js/audit.js" type="text/javascript"></script>
+<script src="static/js/access_control.js" type="text/javascript"></script>
+<script src="static/js/preview.js" type="text/javascript"></script>
+<script src="static/js/playback.js" type="text/javascript"></script>
+
+<!-- 回到顶部按钮 -->
+<button id="backToTop" class="back-to-top" title="回到顶部">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <polyline points="18 15 12 9 6 15"></polyline>
+  </svg>
+</button>
+
+</body>
+</html>

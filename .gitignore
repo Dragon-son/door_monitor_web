@@ -1,0 +1,100 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Sensitive files
+secret_key
+
+# Face photos (large + privacy)
+faces/
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+door_web.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Node modules (if any)
+node_modules/
+
+# Static cache
+static/cache/
+
+# Test scripts and development files
+_remote_*.py
+*_upload.py
+test_*.py
+tests/
+
+# AI agent context files
+AGENTS.md
+CLAUDE.md
+.codegraph/
+.understand-anything/
+
+# Excel files (user data)
+*.xlsx
+*.xls
+
+# App binaries and runtime data
+static/app/
+data/
+backups/
+
+# Test/cache
+.pytest_cache/
+
+# Internal docs and analysis
+ANALYSIS_*.md
+TEST_RESULTS_*.md
+QA_LOGIC_*.md
+MOBILE_APP_PLAN.md
+API_DOCUMENTATION.md
+
+# Utility scripts (internal use)
+barrier_camera_probe.py
