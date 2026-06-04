@@ -1474,12 +1474,12 @@ def import_persons_for_device(device_id, new_persons, no_purge=False, default_ha
                 uid = raw["user_id"]
                 imported_uids.add(uid)
                 existing = _load_person_from_conn(conn, uid)
+                incoming_name = raw.get("name")
+                incoming_begin = raw.get("valid_begin")
+                incoming_end = raw.get("valid_end")
                 conflicts_for_uid = []
                 if existing:
                     person = existing
-                    incoming_name = raw.get("name")
-                    incoming_begin = raw.get("valid_begin")
-                    incoming_end = raw.get("valid_end")
                     if detect_conflicts:
                         # 在覆盖前检测冲突（当前只检测 name，不检测日期）
                         if incoming_name and incoming_name != person["name"]:

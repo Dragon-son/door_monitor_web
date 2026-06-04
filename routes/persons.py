@@ -93,13 +93,17 @@ def import_persons():
         if isinstance(raw_doors, list) and any(int(x) not in access_device_ids for x in raw_doors):
             return err("人员数据包含非门禁设备")
 
-    result = db.import_persons_for_device(
-        did, new_persons,
-        no_purge=no_purge,
-        default_has_face=default_has_face,
-        detect_orphans=detect_orphans,
-        detect_conflicts=detect_conflicts,
-    )
+    try:
+        result = db.import_persons_for_device(
+            did, new_persons,
+            no_purge=no_purge,
+            default_has_face=default_has_face,
+            detect_orphans=detect_orphans,
+            detect_conflicts=detect_conflicts,
+        )
+    except Exception as exc:
+        log_audit("import_persons", target=f"device_id={did}", result="fail", error=str(exc))
+        return err(f"本地人员信息写入失败: {exc}", 500)
     orphans = result.get("orphans", [])
     conflicts = result.get("conflicts", [])
     if detect_conflicts and conflicts:

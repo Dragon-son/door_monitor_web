@@ -15,6 +15,9 @@ let _playbackRange = null;        // {start: 'YYYY-MM-DD HH:MM:SS', end: ...} �
 let _playbackPlayStartedAt = 0;   // 起播/恢复时刻(performance.now()),用于估算游标位置
 let _playbackElapsedBeforePause = 0;
 let _playbackPingTimer = null;    // 心跳定时器
+let _playbackAutoNextTimer = null;
+let _playbackCurrentRecordIndex = -1;
+let _playbackUserStopping = false;
 
 // 时间轴渲染状态
 let _timelineCanvas = null;
@@ -201,14 +204,8 @@ async function loadPlaybackRecords() {
         document.getElementById('playback-play-btn').disabled = false;
         _setPlaybackStatus(`共 ${_playbackRecords.length} 段录像,点时间轴定位播放`);
         renderPlaybackTimeline(date);
-        // 自动播第一段；跨天录像段要裁剪到当前查询日期内，避免跳到前一天播放。
-        const first = _playbackRecords[0];
-        const last = _playbackRecords[_playbackRecords.length - 1];
-        const startSec = Math.max(0, _timeToSec(date, first.start));
-        const endSec = Math.min(86400, _timeToSec(date, last.end));
-        const startStr = `${date} ${_secToTime(startSec)}`;
-        const endStr = `${date} ${_secToTime(endSec)}`;
-        _startPlaybackStream(startStr, endStr);
+        // 自动播第一段；后续由前端在当前段结束后继续切下一段。
+        _startFirstPlaybackRecord();
     } catch (e) {
         _showTimelineEmpty('查询失败: ' + e.message);
     }
@@ -254,12 +251,11 @@ function renderPlaybackTimeline(date) {
     if (!canvas) return;
     if (empty) empty.style.display = 'none';
     canvas.style.display = 'block';
-    _timelineCanvas = canvas;
-    _resizeAndDrawTimeline(date);
 
     // 绑定鼠标 hover / 点击 (避免重复绑定,先 clone)
     const fresh = canvas.cloneNode(true);
     canvas.parentNode.replaceChild(fresh, canvas);
+    fresh.style.display = 'block';
     _timelineCanvas = fresh;
     fresh.addEventListener('mousemove', e => _onTimelineHover(e, date));
     fresh.addEventListener('mouseleave', () => {
@@ -270,14 +266,17 @@ function renderPlaybackTimeline(date) {
     fresh.addEventListener('wheel', e => _onTimelineWheel(e, date), { passive: false });
     fresh.addEventListener('dblclick', () => _resetTimelineZoom(date));
 
-    // 启动游标动画(仅当正在播放)
-    if (!window._playbackTimelineRafId) {
-        const tick = () => {
-            window._playbackTimelineRafId = requestAnimationFrame(tick);
-            _drawPlayhead(date);
-        };
+    _resizeAndDrawTimeline(date);
+    _ensurePlaybackTimelineRaf(date);
+}
+
+function _ensurePlaybackTimelineRaf(date) {
+    if (window._playbackTimelineRafId) return;
+    const tick = () => {
         window._playbackTimelineRafId = requestAnimationFrame(tick);
-    }
+        _drawPlayhead(date);
+    };
+    window._playbackTimelineRafId = requestAnimationFrame(tick);
 }
 
 function _resizeAndDrawTimeline(date) {
@@ -434,6 +433,35 @@ function _drawPlayhead(date) {
     ctx.stroke();
 }
 
+function _playbackRangeDurationSec() {
+    if (!_playbackRange) return 0;
+    const date = document.getElementById('playback-date')?.value || (_playbackRange.start || '').split(' ')[0];
+    const startSec = _timeToSec(date, _playbackRange.start);
+    const endSec = _timeToSec(date, _playbackRange.end);
+    return Math.max(0, endSec - startSec);
+}
+
+function _clearPlaybackAutoNextTimer() {
+    if (_playbackAutoNextTimer) {
+        clearTimeout(_playbackAutoNextTimer);
+        _playbackAutoNextTimer = null;
+    }
+}
+
+function _schedulePlaybackAutoNext() {
+    _clearPlaybackAutoNextTimer();
+    if (!_playbackRange || _playbackCurrentRecordIndex < 0 || _playbackUserStopping || _playbackPaused) return;
+    const durationSec = _playbackRangeDurationSec();
+    if (durationSec <= 0) return;
+    const remainingSec = Math.max(0, durationSec - _playbackElapsedBeforePause);
+    _playbackAutoNextTimer = setTimeout(() => {
+        _playbackAutoNextTimer = null;
+        if (_playbackUserStopping || _playbackPaused) return;
+        playbackStop(true);
+        _startNextPlaybackRecord();
+    }, (remainingSec + 0.5) * 1000);
+}
+
 function _onTimelineHover(e, date) {
     const canvas = _timelineCanvas;
     if (!canvas) return;
@@ -445,6 +473,51 @@ function _onTimelineHover(e, date) {
     tip.style.left = (e.clientX - rect.left + 8) + 'px';
     tip.style.top = '4px';
     tip.style.display = 'block';
+}
+
+function _findPlaybackRecordIndexAt(date, sec) {
+    return (_playbackRecords || []).findIndex(rec => {
+        const startSec = _timeToSec(date, rec.start);
+        const endSec = _timeToSec(date, rec.end);
+        return sec >= startSec && sec <= endSec;
+    });
+}
+
+function _startPlaybackRecordAtIndex(index, startOverride = null) {
+    if (index < 0 || index >= _playbackRecords.length) return false;
+    const rec = _playbackRecords[index];
+    const date = document.getElementById('playback-date')?.value || '';
+    let startStr = startOverride || rec.start;
+    let endStr = rec.end;
+    if (date) {
+        const startSec = Math.max(0, _timeToSec(date, startStr));
+        const endSec = Math.min(86400, _timeToSec(date, endStr));
+        if (endSec <= startSec) return false;
+        startStr = `${date} ${_secToTime(startSec)}`;
+        endStr = `${date} ${_secToTime(endSec)}`;
+    }
+    _playbackCurrentRecordIndex = index;
+    _startPlaybackStream(startStr, endStr);
+    return true;
+}
+
+function _startFirstPlaybackRecord() {
+    for (let index = Math.max(0, _playbackCurrentRecordIndex); index < _playbackRecords.length; index++) {
+        if (_startPlaybackRecordAtIndex(index)) return true;
+    }
+    for (let index = 0; index < Math.max(0, _playbackCurrentRecordIndex); index++) {
+        if (_startPlaybackRecordAtIndex(index)) return true;
+    }
+    return false;
+}
+
+function _startNextPlaybackRecord() {
+    for (let nextIndex = _playbackCurrentRecordIndex + 1; nextIndex < _playbackRecords.length; nextIndex++) {
+        if (_startPlaybackRecordAtIndex(nextIndex)) return true;
+    }
+    _playbackCurrentRecordIndex = -1;
+    _setPlaybackStatus('已播放完全部录像');
+    return false;
 }
 
 function _findPlaybackRecordAt(date, sec) {
@@ -459,38 +532,41 @@ function _onTimelineClick(e, date) {
     const canvas = _timelineCanvas;
     if (!canvas) return;
     const sec = Math.floor(_timelineClientXToSec(e.clientX));
-    const rec = _findPlaybackRecordAt(date, sec);
-    if (!rec) {
+    const index = _findPlaybackRecordIndexAt(date, sec);
+    if (index < 0) {
         toast('info', '该时间点没有录像');
         return;
     }
     const startStr = `${date} ${_secToTime(sec)}`;
-    _startPlaybackStream(startStr, rec.end);
+    _startPlaybackRecordAtIndex(index, startStr);
 }
 
 // ---------- 播放控制 ----------
 function playbackPlayOrPause() {
     if (!_playbackWs) {
         if (!_playbackRecords.length) { toast('error', '没有录像'); return; }
-        _startPlaybackStream(_playbackRecords[0].start, _playbackRecords[_playbackRecords.length - 1].end);
+        _startFirstPlaybackRecord();
     } else {
         if (_playbackPaused) {
             _playbackWs.send('resume');
             _playbackPaused = false;
             _playbackPlayStartedAt = performance.now();  // 继续后的起点
+            _schedulePlaybackAutoNext();
             document.getElementById('playback-play-btn').textContent = '⏸ 暂停';
             _setPlaybackStatus('播放中');
         } else {
             _playbackWs.send('pause');
             _playbackPaused = true;
             _playbackElapsedBeforePause += (performance.now() - _playbackPlayStartedAt) / 1000;
+            _clearPlaybackAutoNextTimer();
             document.getElementById('playback-play-btn').textContent = '▶ 继续';
             _setPlaybackStatus('已暂停');
         }
     }
 }
 
-function playbackStop() {
+function playbackStop(isInternalSwitch = false) {
+    if (!isInternalSwitch) _playbackUserStopping = true;
     if (_playbackPlayer) {
         try {
             if (typeof _playbackPlayer.destroy === 'function') _playbackPlayer.destroy();
@@ -506,6 +582,7 @@ function playbackStop() {
         clearInterval(_playbackPingTimer);
         _playbackPingTimer = null;
     }
+    _clearPlaybackAutoNextTimer();
     if (window._playbackTimelineRafId) {
         cancelAnimationFrame(window._playbackTimelineRafId);
         window._playbackTimelineRafId = null;
@@ -539,11 +616,18 @@ function _useWebCodecs() {
 
 function _startPlaybackStream(startStr, endStr) {
     if (!_playbackSelected) return;
-    playbackStop();
+    playbackStop(true);
+    _playbackUserStopping = false;
 
     _playbackRange = { start: startStr, end: endStr };
     _playbackPlayStartedAt = performance.now();
     _playbackElapsedBeforePause = 0;
+    _schedulePlaybackAutoNext();
+    const dateEl = document.getElementById('playback-date');
+    if (dateEl && dateEl.value && _timelineCanvas) {
+        _resizeAndDrawTimeline(dateEl.value);
+        _ensurePlaybackTimelineRaf(dateEl.value);
+    }
     const stream = document.getElementById('playback-stream').value || 'main';
     const wantWebCodecs = _useWebCodecs();
 
@@ -579,6 +663,8 @@ function _startPlaybackStream(startStr, endStr) {
     });
     ws.onclose = () => {
         if (_playbackWs !== ws) return;
+        const shouldAutoNext = !_playbackUserStopping && _playbackCurrentRecordIndex >= 0;
+        _clearPlaybackAutoNextTimer();
         _setPlaybackStatus('已结束');
         if (_playbackPingTimer) { clearInterval(_playbackPingTimer); _playbackPingTimer = null; }
         if (_playbackPlayer) {
@@ -595,6 +681,11 @@ function _startPlaybackStream(startStr, endStr) {
         document.getElementById('playback-play-btn').textContent = '▶ 播放';
         document.getElementById('playback-play-btn').disabled = !_playbackRecords.length;
         document.getElementById('playback-stop-btn').disabled = true;
+        if (shouldAutoNext) {
+            setTimeout(() => {
+                if (!_playbackUserStopping && !_playbackWs) _startNextPlaybackRecord();
+            }, 0);
+        }
     };
     ws.onerror = () => _setPlaybackStatus('连接错误');
 
